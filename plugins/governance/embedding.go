@@ -3,6 +3,7 @@ package governance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,6 +13,11 @@ import (
 	"github.com/maximhq/bifrost/framework/vectorstore"
 	"github.com/maximhq/bifrost/plugins/governance/complexity"
 )
+
+// ErrEmbeddingRequestExecutorNotConfigured means the HTTP server has not
+// finished wiring the governance plugin to Bifrost's embedding request path.
+// Configuration clients can retry this transient startup state.
+var ErrEmbeddingRequestExecutorNotConfigured = errors.New("embedding request executor is not configured")
 
 // EmbeddingRequestExecutor invokes the embedding endpoint on the bifrost
 // client. The plugin calls it to embed request text for semantic complexity
@@ -68,7 +74,7 @@ type ComplexityVectorStoreSetter interface {
 // warmupEmbeddingTimeout bounds one warmup embedding call, whether that is a
 // batch of exemplars or a single-input fallback. Warmup runs in the background
 // with no request waiting on it, so it must NOT inherit semantic.Timeout — that
-// is the hot-path budget (100ms by default), which a 32-exemplar batch cannot
+// is the hot-path budget (500ms by default), which a 32-exemplar batch cannot
 // possibly meet. It stays bounded so a hung provider cannot pin the warmup
 // worker forever.
 const warmupEmbeddingTimeout = 60 * time.Second
@@ -277,7 +283,7 @@ const probeEmbeddingText = "a"
 // budget and reported to no telemetry counter.
 func (p *GovernancePlugin) ProbeEmbeddingDimension(ctx context.Context, provider schemas.ModelProvider, model string) (int, error) {
 	if p.embeddingExecutor() == nil {
-		return 0, fmt.Errorf("embedding request executor is not configured")
+		return 0, ErrEmbeddingRequestExecutorNotConfigured
 	}
 	probeCtx := schemas.NewBifrostContext(ctx, schemas.NoDeadline)
 	defer probeCtx.Cancel()
@@ -328,7 +334,7 @@ func (p *GovernancePlugin) generateEmbedding(ctx *schemas.BifrostContext, semant
 func (p *GovernancePlugin) generateEmbeddings(ctx *schemas.BifrostContext, semantic *complexity.SemanticConfig, texts []string, timeout time.Duration) ([][]float32, int, error) {
 	executor := p.embeddingExecutor()
 	if executor == nil {
-		return nil, 0, fmt.Errorf("embedding request executor is not configured")
+		return nil, 0, ErrEmbeddingRequestExecutorNotConfigured
 	}
 	if semantic == nil || semantic.Provider == "" || semantic.EmbeddingModel == "" {
 		return nil, 0, fmt.Errorf("semantic classification is not configured")

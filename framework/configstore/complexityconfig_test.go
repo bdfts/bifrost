@@ -73,7 +73,7 @@ func TestComplexitySemanticConfigTimeoutMarshalRoundTrip(t *testing.T) {
 func TestComplexitySemanticConfigNormalizedDefaults(t *testing.T) {
 	normalized := testSemanticConfig().normalized()
 
-	assert.Equal(t, DefaultComplexitySemanticTimeout, normalized.Timeout)
+	assert.Equal(t, 500*time.Millisecond, normalized.Timeout)
 	assert.Equal(t, ComplexitySemanticFallbackLexical, normalized.Fallback)
 	assert.Equal(t, ComplexitySemanticVectorStoreEmbedded, normalized.VectorStore)
 	require.NoError(t, normalized.Validate())
