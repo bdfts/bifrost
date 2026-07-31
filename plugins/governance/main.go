@@ -742,10 +742,38 @@ func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.BifrostContext, req *s
 				// turns improves tier accuracy. Semantic routing intentionally embeds only
 				// the latest user message until that comparison is evidence-backed.
 				semanticResult, err := p.semanticClassifier.Classify(ctx, input.LastUserText)
+				// Retained so the fallback-disabled path can report *why* semantic routing
+				// produced nothing: a rejected near-match reads very differently from a
+				// classifier that never returned a result at all.
+				var rejectedResult *complexity.SemanticResult
 				if err != nil {
 					if p.logger != nil {
 						p.logger.Debug("[Governance] Semantic complexity classification unavailable: %v", err)
 					}
+					// Degrading to lexical is otherwise indistinguishable from
+					// never having enabled semantic routing: the request log
+					// records mechanism=lexical either way.
+					ctx.AppendRoutingEngineLog(schemas.RoutingEngineRoutingRule, schemas.LogLevelWarn, "Semantic complexity classification unavailable; resolving through fallback")
+				} else if semanticResult != nil && !semanticResult.Accepted {
+					rejectedResult = semanticResult
+					if p.logger != nil {
+						p.logger.Debug(
+							"[Governance] Semantic complexity below min_similarity: tier=%s similarity=%.2f min=%.2f",
+							semanticResult.Tier,
+							semanticResult.Score,
+							semanticResult.MinSimilarity,
+						)
+					}
+					ctx.AppendRoutingEngineLog(
+						schemas.RoutingEngineRoutingRule,
+						schemas.LogLevelInfo,
+						fmt.Sprintf(
+							"Semantic complexity rejected: nearest tier=%s similarity=%.2f below min_similarity=%.2f",
+							semanticResult.Tier,
+							semanticResult.Score,
+							semanticResult.MinSimilarity,
+						),
+					)
 				} else if semanticResult != nil {
 					result := &complexity.ComplexityResult{Tier: semanticResult.Tier, Score: semanticResult.Score}
 					ctx.SetValue(schemas.BifrostContextKeyGovernanceComplexityTier, result.Tier)
@@ -760,7 +788,16 @@ func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.BifrostContext, req *s
 				}
 				if p.semanticClassifier.Fallback() == configstore.ComplexitySemanticFallbackNone {
 					ctx.SetValue(schemas.BifrostContextKeyGovernanceComplexityMechanism, complexity.MechanismSkipped)
-					ctx.AppendRoutingEngineLog(schemas.RoutingEngineRoutingRule, schemas.LogLevelInfo, "Semantic complexity analysis unavailable and fallback is disabled")
+					fallbackDisabledLog := "Semantic complexity analysis unavailable and fallback is disabled"
+					if rejectedResult != nil {
+						fallbackDisabledLog = fmt.Sprintf(
+							"Semantic complexity rejected (nearest tier=%s similarity=%.2f below min_similarity=%.2f) and fallback is disabled",
+							rejectedResult.Tier,
+							rejectedResult.Score,
+							rejectedResult.MinSimilarity,
+						)
+					}
+					ctx.AppendRoutingEngineLog(schemas.RoutingEngineRoutingRule, schemas.LogLevelInfo, fallbackDisabledLog)
 					return nil
 				}
 			}
