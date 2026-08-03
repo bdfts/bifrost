@@ -77,11 +77,18 @@ const (
 )
 
 // SupportedBaseProviders is the list of base providers allowed for custom providers.
+//
+// ModelArk is present here on this fork only, and deliberately absent from the
+// upstream pull request: every provider in this deployment is reached through a
+// <base>-rukav-<env> custom provider so staging and production hold separate
+// keys, and one provider opting out of that is how a staging bug ends up
+// spending production quota.
 var SupportedBaseProviders = []ModelProvider{
 	Anthropic,
 	Bedrock,
 	Cohere,
 	Gemini,
+	ModelArk,
 	OpenAI,
 	HuggingFace,
 	Replicate,
