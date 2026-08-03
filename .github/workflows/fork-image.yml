@@ -64,11 +64,19 @@ jobs:
 
       - name: Verify the built image carries the ModelArk provider
         run: |
-          docker pull "${{ env.IMAGE }}:${{ steps.meta.outputs.sha_short }}"
-          # The provider name is compiled into the binary's provider registry;
-          # its absence means the build resolved core from upstream instead of
-          # ./core, which is the exact failure this Dockerfile choice prevents.
-          docker run --rm --entrypoint sh "${{ env.IMAGE }}:${{ steps.meta.outputs.sha_short }}" \
-            -c 'strings /app/bifrost-http 2>/dev/null | grep -qx modelark' \
-            && echo "modelark present in binary" \
-            || { echo "modelark MISSING from binary - build used upstream core"; exit 1; }
+          set -euo pipefail
+          IMG="${{ env.IMAGE }}:${{ steps.meta.outputs.sha_short }}"
+          docker pull "$IMG"
+          # The binary is /app/main. Assert it exists first -- a wrong path
+          # would otherwise make every check below vacuously "fail", which is
+          # how this step reported a false negative on its first run.
+          docker run --rm --entrypoint sh "$IMG" -c 'test -f /app/main'
+          # Match on the provider's own base URL, not just the name: the name
+          # alone could plausibly appear in an unrelated string, the host it
+          # talks to could not. grep -a, not strings + grep -x -- Go packs
+          # string literals into one blob, so no literal sits on its own line.
+          for needle in modelark ark.ap-southeast.bytepluses.com; do
+            docker run --rm --entrypoint sh "$IMG" -c "grep -aq '$needle' /app/main" \
+              || { echo "::error::'$needle' missing from /app/main - the build resolved core from upstream instead of ./core"; exit 1; }
+            echo "found: $needle"
+          done
