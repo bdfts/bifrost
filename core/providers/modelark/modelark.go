@@ -30,6 +30,13 @@ type ModelArkProvider struct {
 	networkConfig       schemas.NetworkConfig // Network configuration including extra headers
 	sendBackRawRequest  bool                  // Whether to include raw request in BifrostResponse
 	sendBackRawResponse bool                  // Whether to include raw response in BifrostResponse
+
+	// customProviderConfig is set when this provider backs a custom provider
+	// (modelark-<something>). Fork-only, paired with ModelArk's presence in
+	// SupportedBaseProviders: GetProviderKey must then report the custom name,
+	// or GetConfiguredProviders never lists it and every request to it fails
+	// provider resolution.
+	customProviderConfig *schemas.CustomProviderConfig
 }
 
 // NewModelArkProvider creates a new ModelArk provider instance.
@@ -62,17 +69,18 @@ func NewModelArkProvider(config *schemas.ProviderConfig, logger schemas.Logger) 
 	config.NetworkConfig.BaseURL = strings.TrimRight(config.NetworkConfig.BaseURL, "/")
 
 	return &ModelArkProvider{
-		logger:              logger,
-		client:              client,
-		networkConfig:       config.NetworkConfig,
-		sendBackRawRequest:  config.SendBackRawRequest,
-		sendBackRawResponse: config.SendBackRawResponse,
+		logger:               logger,
+		client:               client,
+		networkConfig:        config.NetworkConfig,
+		customProviderConfig: config.CustomProviderConfig,
+		sendBackRawRequest:   config.SendBackRawRequest,
+		sendBackRawResponse:  config.SendBackRawResponse,
 	}, nil
 }
 
 // GetProviderKey returns the provider identifier for ModelArk.
 func (provider *ModelArkProvider) GetProviderKey() schemas.ModelProvider {
-	return schemas.ModelArk
+	return providerUtils.GetProviderName(schemas.ModelArk, provider.customProviderConfig)
 }
 
 // ListModels is not supported by the ModelArk provider.
