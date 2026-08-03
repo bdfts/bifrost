@@ -1,0 +1,74 @@
+# Builds the Bifrost image this fork actually runs, from LOCAL module sources.
+#
+# transports/go.mod pins github.com/maximhq/bifrost/core to a published version
+# with no replace directive and no go.work, so the upstream Dockerfile would
+# compile against upstream's core and silently produce an image WITHOUT the
+# ModelArk provider this fork exists for. Dockerfile.local sets up a go
+# workspace over ./core and is the only variant that carries our changes.
+#
+# This workflow lives on deploy/rukav-fork, never on feat/modelark-provider,
+# so it stays out of the upstream pull request's diff.
+name: Fork Image
+
+on:
+  push:
+    branches: [deploy/rukav-fork]
+  workflow_dispatch:
+
+concurrency:
+  group: fork-image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/bdfts/bifrost
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "version=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: transports/Dockerfile.local
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+          push: true
+          # The cluster is x86 throughout; an arm64 leg would only add a slow
+          # QEMU build for an image nothing pulls.
+          platforms: linux/amd64
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.sha_short }}
+            ${{ env.IMAGE }}:modelark
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify the built image carries the ModelArk provider
+        run: |
+          docker pull "${{ env.IMAGE }}:${{ steps.meta.outputs.sha_short }}"
+          # The provider name is compiled into the binary's provider registry;
+          # its absence means the build resolved core from upstream instead of
+          # ./core, which is the exact failure this Dockerfile choice prevents.
+          docker run --rm --entrypoint sh "${{ env.IMAGE }}:${{ steps.meta.outputs.sha_short }}" \
+            -c 'strings /app/bifrost-http 2>/dev/null | grep -qx modelark' \
+            && echo "modelark present in binary" \
+            || { echo "modelark MISSING from binary - build used upstream core"; exit 1; }
