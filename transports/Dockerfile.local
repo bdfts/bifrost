@@ -2,7 +2,7 @@
 # For pre-release CI builds where module versions aren't published yet
 
 # --- UI Build Stage: Build the React + Vite frontend ---
-  FROM node:25-alpine3.23@sha256:cf38e1f3c28ac9d81cdc0c51d8220320b3b618780e44ef96a39f76f7dbfef023 AS ui-builder
+  FROM node:22.23.4-alpine3.23 AS ui-builder
   WORKDIR /app
 
   # Copy UI package files and install dependencies
@@ -17,7 +17,7 @@
   # Skip the copy-build step since we'll copy the files in the Go build stage
 
   # --- Go Build Stage: Compile the Go binary using local modules ---
-  FROM golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc AS builder
+  FROM golang:1.26.10-alpine3.23 AS builder
   WORKDIR /build
 
   # Install dependencies including gcc for CGO and sqlite
@@ -65,7 +65,7 @@
   RUN test -f /app/main || (echo "Build failed" && exit 1)
 
   # --- Runtime Stage: Minimal runtime image ---
-  FROM alpine:3.23.4@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11
+  FROM alpine:3.23.7
   WORKDIR /app
 
   # Install runtime dependencies for CGO-enabled binary
